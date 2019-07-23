@@ -88,7 +88,7 @@ namespace AdfsSetbusinessUnit
                 webURl = $"{baseUrl}systemusers({item.systemuserid})";
 
                 var message = await client2.PatchAsync(webURl, content2);
-                Console.WriteLine($"Enable systemuser PatchAsync:{message.StatusCode}");
+                Console.WriteLine($"Enable systemuser PatchAsync:{message.StatusCode}  IsSuccessStatusCode:{message.IsSuccessStatusCode}");
 
                 //更改用户buid
                 webURl = $"{baseUrl}systemusers({item.systemuserid})/Microsoft.Dynamics.CRM.SetBusinessSystemUser()";
