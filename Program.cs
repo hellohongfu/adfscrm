@@ -3,12 +3,14 @@ using Newtonsoft.Json.Linq;
 using RestSharp;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace AdfsSetbusinessUnit
@@ -17,7 +19,7 @@ namespace AdfsSetbusinessUnit
     {
 
 
-       static string us;
+        static string us;
         static string pwd;
         static async Task Main(string[] args)
         {
@@ -70,61 +72,117 @@ namespace AdfsSetbusinessUnit
             var baseUrl = "https://crm.demo.local:5555//api/data/v9.0/";
             var i = 1;
 
+            var list = new List<systemuser>();
+            List<Task> tasks = new List<Task>();
+            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationToken t = cts.Token;
+
+
+            var pageList = new List<List<systemuser>>();
+
+
+
+            var count = 0;
+
             foreach (var item in listUser)
             {
-                if (token.expires_in_date <= DateTime.Now) {
-                    token = await GetToken(us,pwd);
-                    client2 = await InitHttpClient(token);
-                }
-                
-
-                Console.WriteLine($"set user userid:{item.systemuserid}, businessunitid:{item.jobtitle}");
-                //查询buid
-                var webURl = $"{baseUrl}businessunits?$select=lf_id&$filter=lf_id eq '{item.jobtitle}'";
-
-                result = await client2.GetStringAsync(webURl);
-                try
+                if (count == 1000)
                 {
-                    var buid = JsonConvert.DeserializeObject<businessunits>(result).value[0]?.businessunitid;
-                    Console.WriteLine($"businessunitid:{buid}");
-                    //启用用户
-                    var systemuserUpdate = new systemuserUpdate() { isdisabled = false };
-                    var content2 = new StringContent(JsonConvert.SerializeObject(systemuserUpdate));
-                    content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
-
-                    webURl = $"{baseUrl}systemusers({item.systemuserid})";
-
-                    var message = await client2.PatchAsync(webURl, content2);
-                    Console.WriteLine($"Enable systemuser PatchAsync:{message.StatusCode}  IsSuccessStatusCode:{message.IsSuccessStatusCode}");
-
-                    if (string.IsNullOrWhiteSpace(buid) == false)
-                    {
-                        //更改用户buid
-                        webURl = $"{baseUrl}systemusers({item.systemuserid})/Microsoft.Dynamics.CRM.SetBusinessSystemUser()";
-                        content2 = new StringContent("{\"BusinessUnit\":{\"businessunitid\":\"" + buid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.businessunit\"},\"ReassignPrincipal\":{\"systemuserid\":\"" + item.systemuserid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.systemuser\"}}");
-                        content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
-
-
-                        message = await client2.PostAsync(webURl, content2);
-
-                        Console.WriteLine($"SetBusinessSystemUser PostAsync:{message.StatusCode} IsSuccessStatusCode:{message.IsSuccessStatusCode} ,count:{i}");
-
-                    }
-
+                    pageList.Add(list);
+                    list = new List<systemuser>();
+                    count = 0;
                 }
-                catch (Exception ex)
+                else
                 {
-                    Console.WriteLine(ex);
-                    //throw;
+                    list.Add(item);
+                    count++;
                 }
-                finally {
-                    i++;
-                }
-                
-               
 
 
             }
+            pageList.Add(list);
+
+
+            foreach (var page in pageList)
+            {
+                var task = Task.Factory.StartNew((p) => {
+
+                    var l2 = p as List<systemuser>;
+
+                    foreach (var item in l2)
+                    {
+                        Console.WriteLine($"task list count {l2.Count}");
+                        if (token.expires_in_date <= DateTime.Now)
+                        {
+                            token = GetToken(us, pwd).Result;
+                            client2 = InitHttpClient(token).Result;
+                        }
+
+
+                        Console.WriteLine($"set user userid:{item.systemuserid}, businessunitid:{item.jobtitle}");
+                        //查询buid
+                        var webURl = $"{baseUrl}businessunits?$select=lf_id&$filter=lf_id eq '{item.jobtitle}'";
+
+                        result = client2.GetStringAsync(webURl).Result;
+                        try
+                        {
+                            var buid = JsonConvert.DeserializeObject<businessunits>(result).value[0]?.businessunitid;
+                            Console.WriteLine($"businessunitid:{buid}");
+                            //启用用户
+                            var systemuserUpdate = new systemuserUpdate() { isdisabled = false };
+                            var content2 = new StringContent(JsonConvert.SerializeObject(systemuserUpdate));
+                            content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
+
+                            webURl = $"{baseUrl}systemusers({item.systemuserid})";
+
+                            var message = client2.PatchAsync(webURl, content2).Result;
+                            Console.WriteLine($"Enable systemuser PatchAsync:{message.StatusCode}  IsSuccessStatusCode:{message.IsSuccessStatusCode}");
+
+                            if (string.IsNullOrWhiteSpace(buid) == false)
+                            {
+                                //更改用户buid
+                                webURl = $"{baseUrl}systemusers({item.systemuserid})/Microsoft.Dynamics.CRM.SetBusinessSystemUser()";
+                                content2 = new StringContent("{\"BusinessUnit\":{\"businessunitid\":\"" + buid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.businessunit\"},\"ReassignPrincipal\":{\"systemuserid\":\"" + item.systemuserid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.systemuser\"}}");
+                                content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
+
+
+                                message = client2.PostAsync(webURl, content2).Result;
+
+                                Console.WriteLine($"SetBusinessSystemUser PostAsync:{message.StatusCode} IsSuccessStatusCode:{message.IsSuccessStatusCode} ,count:{i}");
+
+                            }
+
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(ex);
+                            //throw;
+                        }
+                        finally
+                        {
+                            i++;
+                        }
+
+
+
+
+                    }
+                }, page, t);
+
+                tasks.Add(task);
+            }
+
+
+          
+
+
+           await Task.Factory.ContinueWhenAll(tasks.ToArray(), completedTasks => {
+
+                Console.WriteLine($" 一共处理了{i} ");
+               
+            });
+
+
             Console.ReadKey();
 
 
