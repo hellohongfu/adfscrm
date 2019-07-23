@@ -17,6 +17,8 @@ namespace AdfsSetbusinessUnit
     {
 
 
+       static string us;
+        static string pwd;
         static async Task Main(string[] args)
         {
             ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
@@ -25,12 +27,15 @@ namespace AdfsSetbusinessUnit
 
             Console.WriteLine("Hello World!");
 
-
+            Console.WriteLine("input username：");
+             us = Console.ReadLine();
+            Console.WriteLine("input password：");
+             pwd = Console.ReadLine();
 
             HttpClientHandler clientHandler = new HttpClientHandler();
             clientHandler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => { return true; };
 
-            var token = await GetToken();
+            var token = await GetToken(us, pwd);
             HttpClient client2 =await InitHttpClient(token);
         
           
@@ -68,7 +73,7 @@ namespace AdfsSetbusinessUnit
             foreach (var item in listUser)
             {
                 if (token.expires_in_date <= DateTime.Now) {
-                    token = await GetToken();
+                    token = await GetToken(us,pwd);
                     client2 = await InitHttpClient(token);
                 }
                 
@@ -78,29 +83,45 @@ namespace AdfsSetbusinessUnit
                 var webURl = $"{baseUrl}businessunits?$select=lf_id&$filter=lf_id eq '{item.jobtitle}'";
 
                 result = await client2.GetStringAsync(webURl);
-                var buid = JsonConvert.DeserializeObject<businessunits>(result).value[0].businessunitid;
-                Console.WriteLine($"businessunitid:{buid}");
-                //启用用户
-                var systemuserUpdate = new systemuserUpdate() { isdisabled = false };
-                var content2 = new StringContent(JsonConvert.SerializeObject(systemuserUpdate));
-                content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
+                try
+                {
+                    var buid = JsonConvert.DeserializeObject<businessunits>(result).value[0]?.businessunitid;
+                    Console.WriteLine($"businessunitid:{buid}");
+                    //启用用户
+                    var systemuserUpdate = new systemuserUpdate() { isdisabled = false };
+                    var content2 = new StringContent(JsonConvert.SerializeObject(systemuserUpdate));
+                    content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
 
-                webURl = $"{baseUrl}systemusers({item.systemuserid})";
+                    webURl = $"{baseUrl}systemusers({item.systemuserid})";
 
-                var message = await client2.PatchAsync(webURl, content2);
-                Console.WriteLine($"Enable systemuser PatchAsync:{message.StatusCode}  IsSuccessStatusCode:{message.IsSuccessStatusCode}");
+                    var message = await client2.PatchAsync(webURl, content2);
+                    Console.WriteLine($"Enable systemuser PatchAsync:{message.StatusCode}  IsSuccessStatusCode:{message.IsSuccessStatusCode}");
 
-                //更改用户buid
-                webURl = $"{baseUrl}systemusers({item.systemuserid})/Microsoft.Dynamics.CRM.SetBusinessSystemUser()";
-                content2 = new StringContent("{\"BusinessUnit\":{\"businessunitid\":\"" + buid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.businessunit\"},\"ReassignPrincipal\":{\"systemuserid\":\"" + item.systemuserid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.systemuser\"}}");
-                content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
+                    if (string.IsNullOrWhiteSpace(buid) == false)
+                    {
+                        //更改用户buid
+                        webURl = $"{baseUrl}systemusers({item.systemuserid})/Microsoft.Dynamics.CRM.SetBusinessSystemUser()";
+                        content2 = new StringContent("{\"BusinessUnit\":{\"businessunitid\":\"" + buid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.businessunit\"},\"ReassignPrincipal\":{\"systemuserid\":\"" + item.systemuserid + "\",\"@odata.type\":\"Microsoft.Dynamics.CRM.systemuser\"}}");
+                        content2.Headers.ContentType = new MediaTypeHeaderValue(@"application/json");
 
 
-                message = await client2.PostAsync(webURl, content2);
+                        message = await client2.PostAsync(webURl, content2);
 
-                Console.WriteLine($"SetBusinessSystemUser PostAsync:{message.StatusCode} IsSuccessStatusCode:{message.IsSuccessStatusCode} ,count:{i}");
+                        Console.WriteLine($"SetBusinessSystemUser PostAsync:{message.StatusCode} IsSuccessStatusCode:{message.IsSuccessStatusCode} ,count:{i}");
 
-                i++;
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex);
+                    //throw;
+                }
+                finally {
+                    i++;
+                }
+                
+               
 
 
             }
@@ -113,7 +134,7 @@ namespace AdfsSetbusinessUnit
         }
 
 
-        static async Task<adfsToken> GetToken() {
+        static async Task<adfsToken> GetToken(string username,string passwork) {
             HttpClientHandler clientHandler = new HttpClientHandler();
             clientHandler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => { return true; };
 
@@ -124,17 +145,15 @@ namespace AdfsSetbusinessUnit
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             _httpClient.DefaultRequestHeaders.Add("OData-MaxVersion", "4.0");
             _httpClient.DefaultRequestHeaders.Add("OData-Version", "4.0");
-            Console.WriteLine("input username：");
-            var us = Console.ReadLine();
-            Console.WriteLine("input password：");
-            var pwd = Console.ReadLine();
+        
+           
             var content = new FormUrlEncodedContent(new[] {
                 new KeyValuePair<string,string>("client_id","4d482433-0b9f-4082-9837-b745c8ce9e5d"),
                 new KeyValuePair<string,string>("client_secret","nETud9tWXmAno1q6_UOEKNOuQLwWk1etFJVTK3SW"),
                 new KeyValuePair<string,string>("resource","https://crm.demo.local:5555/api/data/v9.0"),
-                new KeyValuePair<string,string>("username",us),
+                new KeyValuePair<string,string>("username",username),
 
-                new KeyValuePair<string,string>("password",pwd),
+                new KeyValuePair<string,string>("password",passwork),
                 new KeyValuePair<string,string>("grant_type","password"),
                          }); ; ;
 
@@ -157,7 +176,7 @@ namespace AdfsSetbusinessUnit
             }
             else
             {
-                token = await GetToken();
+                token = await GetToken(us,pwd);
                 client2 = new HttpClient(clientHandler);
                 client2.DefaultRequestHeaders.Add("Authorization", "Bearer " + token.access_token);
                 
